@@ -43,18 +43,6 @@ Upload images of:
 - **Cultural Intelligence**: Qloo Taste AI API
 - **Image Processing**: Base64 encoding with client-side validation
 
-### **Backend**
-- **Runtime**: Node.js
-- **API Routes**: Next.js API Routes (App Router)
-- **HTTP Client**: Native Fetch API
-- **Error Handling**: Comprehensive try-catch with fallbacks
-
-### **Deployment & DevOps**
-- **Hosting**: Vercel (recommended)
-- **Environment**: Serverless functions
-- **CI/CD**: Vercel automatic deployments
-- **Monitoring**: Built-in error tracking and logging
-
 ### **Development Tools**
 - **Package Manager**: npm
 - **Linting**: ESLint with Next.js config
@@ -208,36 +196,6 @@ const categories = [
 ];
 ```
 
-## 🚀 Deployment
-
-### Vercel (Recommended)
-```bash
-npm install -g vercel
-vercel
-```
-
-Add environment variables in Vercel dashboard:
-- `HUGGINGFACE_API_KEY`
-- `QLOO_API_KEY`
-
-### Docker
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-### Manual Deployment
-```bash
-npm run build
-npm start
-```
-
 ## 🧪 Testing
 
 ### Run Development Server
@@ -311,45 +269,13 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - Check supported formats (JPEG, PNG, WebP)
 - Ensure stable internet connection
 
-## 📊 API Usage
-
-### Rate Limits
-- **Hugging Face**: ~1000 requests/month (free)
-- **Qloo**: Varies by plan
-- **Vercel**: 100GB bandwidth (free)
-
-### Cost Estimation
-- **Development**: $0/month (all free tiers)
-- **Production (1K users/month)**: ~$20-50/month
-- **Scale (10K users/month)**: ~$200-500/month
 
 ## 🏆 Built For
 
 - **Qloo Global Hackathon 2025**
-- **Cultural Intelligence Applications**
-- **AI/ML Demonstrations**
-- **Modern Web Development Showcase**
 
-## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- **Hugging Face** for providing free access to state-of-the-art AI models
-- **Qloo** for cultural intelligence API and hackathon inspiration
-- **Vercel** for seamless deployment platform
-- **Anthropic** for Claude AI assistance in development
-- **Salesforce** for the BLIP-2 vision model
-- **Meta** for the Llama-2 language model
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/vibe-validator/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/vibe-validator/discussions)
-- **Email**: your.email@example.com
-
----
 
 **Built with ❤️ for the Qloo Global Hackathon 2025**
 
