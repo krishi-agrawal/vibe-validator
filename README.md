@@ -125,47 +125,6 @@ BLIP-2 Analysis → Vibe Interpretation →
 Qloo Recommendations → UI Display
 ```
 
-## 📂 Project Structure
-
-```
-vibe-validator/
-├── app/                          # Next.js App Router
-│   ├── api/analyze/route.ts      # Main analysis API endpoint
-│   ├── globals.css               # Global styles + glassmorphism
-│   ├── layout.tsx                # Root layout with metadata
-│   └── page.tsx                  # Main application page
-├── components/                   # React Components
-│   ├── ImageUpload.tsx           # Drag & drop upload
-│   ├── LoadingAnimation.tsx      # Multi-stage loading UI
-│   └── ResultsDisplay.tsx        # Results visualization
-├── types/index.ts                # TypeScript definitions
-├── utils/index.ts                # Helper functions
-├── public/                       # Static assets
-├── .env.local                    # Environment variables
-├── package.json                  # Dependencies
-├── tailwind.config.js            # Tailwind configuration
-├── next.config.js                # Next.js configuration
-└── README.md                     # This file
-```
-
-## 🎨 Key Features Deep Dive
-
-### **AI-Powered Analysis**
-- **BLIP-2 Vision**: Converts images to detailed natural language descriptions
-- **Llama-2 Reasoning**: Interprets cultural context and aesthetic patterns
-- **Confidence Scoring**: ML-based scoring for recommendation quality
-
-### **Cultural Intelligence**
-- **Cross-Domain Mapping**: Links visual aesthetics to cultural preferences
-- **Contextual Recommendations**: Suggestions based on cultural understanding
-- **Privacy-First**: No personal data collection, only aesthetic analysis
-
-### **User Experience**
-- **Glassmorphism UI**: Modern, premium visual design
-- **Progressive Loading**: Multi-stage loading with clear progress indication
-- **Responsive Design**: Optimized for all screen sizes
-- **Error Handling**: Graceful fallbacks ensure app never crashes
-
 ## 🔧 Configuration
 
 ### Environment Variables
@@ -203,71 +162,6 @@ const categories = [
 npm run dev
 ```
 
-### Test API Endpoint
-```bash
-curl -X POST http://localhost:3000/api/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"imageBase64": "base64_encoded_image"}'
-```
-
-### Test Different Image Types
-- Modern spaces (restaurants, offices)
-- Vintage/rustic environments
-- Luxury/elegant settings
-- Industrial/urban spaces
-- Natural/organic environments
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Workflow
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Add tests if applicable
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-### Code Style
-- Use TypeScript for type safety
-- Follow ESLint configuration  
-- Use meaningful component and variable names
-- Add comments for complex logic
-
-## 📈 Performance
-
-### Metrics
-- **Cold start**: ~2-3 seconds
-- **Analysis time**: 10-15 seconds average
-- **Bundle size**: ~500KB gzipped
-- **Lighthouse score**: 95+ across all metrics
-
-### Optimization
-- Image optimization with Next.js
-- API route caching for repeated requests
-- Lazy loading for heavy components
-- CDN deployment with Vercel
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**500 Server Error**
-- Check API keys are properly set
-- Verify Hugging Face token starts with `hf_`
-- Check server logs for detailed error messages
-
-**Slow Analysis**
-- Hugging Face free tier has rate limits
-- Consider upgrading to paid tier for production
-- Models may need "warm up" time
-
-**Upload Issues**
-- Verify image is under 5MB
-- Check supported formats (JPEG, PNG, WebP)
-- Ensure stable internet connection
 
 
 ## 🏆 Built For
