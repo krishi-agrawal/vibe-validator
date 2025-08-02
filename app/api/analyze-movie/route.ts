@@ -114,8 +114,6 @@ Only respond with valid JSON, no additional text. [/INST]`;
     }
   }
 
-  // Fallback: parse the text response manually
-  return parseMovieAnalysisFromText(generatedText, movieName);
 }
 
 function intelligentMovieAnalysis(movieName: string): any {
