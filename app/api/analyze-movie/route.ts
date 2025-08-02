@@ -1,607 +1,461 @@
-// app/api/analyze-movie/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import type { MovieVibeResponse, APIError, MovieAnalysis, MovieVibeParameters, SimilarMovie } from '../../../types';
+import type { VibeValidationResponse, APIError } from '../../../types';
 
-// Hugging Face models for movie analysis - using more powerful models
-const HF_MOVIE_ANALYSIS_MODEL = 'https://api-inference.huggingface.co/models/moonshotai/Kimi-K2-Instruct';
-const HF_BACKUP_MODEL = 'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1';
-const HF_ALTERNATIVE_MODEL = 'https://api-inference.huggingface.co/models/google/flan-t5-large';
+// Hugging Face models
+const HF_IMAGE_MODEL = 'https://api-inference.huggingface.co/models/Salesforce/blip2-opt-2.7b';
+const HF_TEXT_MODEL = 'https://api-inference.huggingface.co/models/microsoft/DialoGPT-large';
+const HF_CULTURAL_MODEL = 'https://api-inference.huggingface.co/models/meta-llama/Llama-2-7b-chat-hf';
 
-async function analyzeMovieWithHF(movieName: string) {
+async function analyzeImageWithHF(imageBase64: string) {
   if (!process.env.HUGGINGFACE_API_KEY) {
     throw new Error('Missing Hugging Face API key');
   }
 
-  console.log('🎬 Analyzing movie with Hugging Face:', movieName);
-
-  // Try multiple models in order of preference
-  const models = [HF_MOVIE_ANALYSIS_MODEL, HF_BACKUP_MODEL, HF_ALTERNATIVE_MODEL];
+  console.log('🔍 Calling Hugging Face BLIP-2...');
   
-  for (const model of models) {
-    try {
-      const result = await tryMovieAnalysisWithModel(movieName, model);
-      if (result && result.summary && result.summary.length > 20) {
-        console.log(`✅ Successfully analyzed with model: ${model}`);
-        return result;
-      }
-    } catch (error) {
-      console.log(`❌ Model ${model} failed, trying next...`);
-      continue;
-    }
-  }
-
-  // If all HF models fail, use intelligent analysis
-  console.log('📝 All HF models failed, using intelligent analysis');
-  return intelligentMovieAnalysis(movieName);
-}
-
-async function tryMovieAnalysisWithModel(movieName: string, modelUrl: string) {
-  const isLlamaModel = modelUrl.includes('llama') || modelUrl.includes('mistral');
-  
-  let prompt;
-  if (isLlamaModel) {
-    // Format for Llama/Mistral models
-    prompt = `<s>[INST] You are a movie expert. Analyze the movie "${movieName}" and provide a comprehensive analysis.
-
-Please provide detailed information about:
-1. A brief plot summary (2-3 sentences)
-2. Main themes (3-5 key themes)
-3. Primary genres (2-4 genres)
-4. Cultural keywords and elements (3-5 keywords)
-5. Target audience and demographics
-
-Respond in this exact JSON format:
-{
-  "summary": "brief plot summary here",
-  "themes": ["theme1", "theme2", "theme3"],
-  "genres": ["genre1", "genre2"],
-  "culturalKeywords": ["keyword1", "keyword2", "keyword3"]
-}
-
-Only respond with valid JSON, no additional text. [/INST]`;
-  } else {
-    // Format for T5 and other models
-    prompt = `Analyze the movie "${movieName}". Provide a JSON response with summary, themes array, genres array, and culturalKeywords array. Movie analysis:`;
-  }
-
-  const response = await fetch(modelUrl, {
+  const response = await fetch(HF_IMAGE_MODEL, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      inputs: prompt,
+      inputs: imageBase64,
       parameters: {
-        max_new_tokens: isLlamaModel ? 400 : 250,
-        temperature: 0.3,
+        max_new_tokens: 150,
         do_sample: true,
-        top_p: 0.9,
-        return_full_text: false,
-        stop: isLlamaModel ? ["</s>", "[INST]"] : undefined
+        temperature: 0.7,
+        top_p: 0.9
       }
     }),
   });
 
-  console.log(`📡 ${modelUrl} response status:`, response.status);
+  console.log('📡 HF Image API response status:', response.status);
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`❌ ${modelUrl} error:`, errorText);
-    throw new Error(`Model API error: ${response.status}`);
+    console.error('❌ HF Image API error response:', errorText);
+    throw new Error(`Hugging Face Image API error: ${response.status} - ${errorText}`);
   }
 
   const result = await response.json();
-  console.log(`📦 ${modelUrl} result:`, JSON.stringify(result, null, 2));
-
-  let generatedText = '';
+  console.log('📦 HF Image API raw result:', JSON.stringify(result, null, 2));
+  
+  // Handle different response formats from HF
   if (Array.isArray(result) && result.length > 0) {
-    generatedText = result[0].generated_text || '';
-  } else if (typeof result === 'object' && result.generated_text) {
-    generatedText = result.generated_text;
-  }
-
-  // Try to parse JSON from the response
-  const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.summary && parsed.themes && parsed.genres && parsed.culturalKeywords) {
-        return parsed;
-      }
-    } catch (parseError) {
-      console.log('JSON parse failed, trying text parsing...');
-    }
-  }
-
-}
-
-function intelligentMovieAnalysis(movieName: string): any {
-  console.log('📝 Using intelligent movie analysis for:', movieName);
-  
-  // Basic movie database - in a real app, you'd use TMDB API or similar
-  const movieDatabase: Record<string, any> = {
-    'blade runner 2049': {
-      summary: 'A visually stunning sci-fi masterpiece exploring themes of identity, humanity, and what it means to be alive in a dystopian future.',
-      themes: ['identity', 'humanity', 'artificial intelligence', 'dystopia', 'existentialism'],
-      genres: ['sci-fi', 'drama', 'thriller'],
-      culturalKeywords: ['cyberpunk', 'neo-noir', 'philosophical', 'visual spectacle', 'Denis Villeneuve']
-    },
-    'the grand budapest hotel': {
-      summary: 'A whimsical and meticulously crafted comedy-drama about friendship, loyalty, and the end of an era, told through Wes Anderson\'s distinctive visual style.',
-      themes: ['friendship', 'nostalgia', 'European culture', 'class', 'loyalty'],
-      genres: ['comedy', 'drama', 'adventure'],
-      culturalKeywords: ['Wes Anderson', 'symmetrical', 'pastel colors', 'European', 'whimsical']
-    },
-    'spirited away': {
-      summary: 'A magical coming-of-age story about a young girl navigating a spirit world, exploring themes of environmentalism, family, and growing up.',
-      themes: ['coming of age', 'environmentalism', 'family', 'courage', 'tradition vs modernity'],
-      genres: ['animation', 'fantasy', 'family'],
-      culturalKeywords: ['Studio Ghibli', 'Japanese folklore', 'hand-drawn animation', 'Miyazaki', 'magical realism']
-    },
-    'parasite': {
-      summary: 'A darkly comic thriller examining class inequality and social stratification through the story of two families from different economic backgrounds.',
-      themes: ['class struggle', 'inequality', 'social commentary', 'family dynamics', 'survival'],
-      genres: ['thriller', 'drama', 'dark comedy'],
-      culturalKeywords: ['Korean cinema', 'Bong Joon-ho', 'social inequality', 'dark humor', 'architectural symbolism']
-    }
-  };
-
-  const lowerMovieName = movieName.toLowerCase();
-  
-  // Check if we have specific data for this movie
-  if (movieDatabase[lowerMovieName]) {
-    return movieDatabase[lowerMovieName];
-  }
-
-  // Generate intelligent fallback based on movie name patterns
-  return generateFallbackAnalysis(movieName);
-}
-
-function generateFallbackAnalysis(movieName: string): any {
-  // Basic pattern matching for common movie types
-  const lowerName = movieName.toLowerCase();
-  
-  let themes = ['drama', 'character development'];
-  let genres = ['drama'];
-  let culturalKeywords = ['cinematic', 'storytelling'];
-  
-  // Pattern-based analysis
-  if (lowerName.includes('star') || lowerName.includes('space') || lowerName.includes('galaxy')) {
-    themes.push('adventure', 'heroism', 'good vs evil');
-    genres.push('sci-fi', 'adventure');
-    culturalKeywords.push('space opera', 'special effects');
-  } else if (lowerName.includes('love') || lowerName.includes('heart')) {
-    themes.push('romance', 'relationships', 'love');
-    genres.push('romance', 'drama');
-    culturalKeywords.push('romantic', 'emotional');
-  } else if (lowerName.includes('dark') || lowerName.includes('night')) {
-    themes.push('mystery', 'suspense', 'psychological');
-    genres.push('thriller', 'mystery');
-    culturalKeywords.push('atmospheric', 'noir');
+    const description = result[0].generated_text || result[0].caption || result[0].text || 'Unable to analyze image';
+    console.log('✅ Extracted description:', description);
+    return description;
   }
   
-  return {
-    summary: `A compelling ${genres[0]} that explores themes of ${themes.slice(0, 3).join(', ')}, offering audiences a thoughtful cinematic experience.`,
-    themes: themes.slice(0, 5),
-    genres: genres.slice(0, 3),
-    culturalKeywords: culturalKeywords.slice(0, 5)
-  };
-}
-
-function parseMovieAnalysis(analysisText: string, movieName: string): any {
-  // Extract themes, genres, and keywords from the generated text
-  const themes = extractListFromText(analysisText, ['theme', 'explores', 'about', 'deals with']);
-  const genres = extractGenres(analysisText);
-  const culturalKeywords = extractCulturalKeywords(analysisText);
-  
-  return {
-    summary: analysisText.substring(0, 200) + '...',
-    themes: themes.length > 0 ? themes : ['drama', 'human nature'],
-    genres: genres.length > 0 ? genres : ['drama'],
-    culturalKeywords: culturalKeywords.length > 0 ? culturalKeywords : ['cinematic', 'artistic']
-  };
-}
-
-function extractListFromText(text: string, keywords: string[]): string[] {
-  const items: string[] = [];
-  const sentences = text.toLowerCase().split(/[.!?]/);
-  
-  sentences.forEach(sentence => {
-    keywords.forEach(keyword => {
-      if (sentence.includes(keyword)) {
-        // Simple extraction of potential themes
-        const words = sentence.split(' ');
-        words.forEach(word => {
-          if (word.length > 3 && !['the', 'and', 'that', 'with', 'this'].includes(word)) {
-            items.push(word.replace(/[^a-zA-Z]/g, ''));
-          }
-        });
-      }
-    });
-  });
-  
-  return [...new Set(items)].slice(0, 5);
-}
-
-function extractGenres(text: string): string[] {
-  const commonGenres = [
-    'action', 'adventure', 'comedy', 'drama', 'horror', 'mystery', 'romance', 
-    'sci-fi', 'thriller', 'fantasy', 'animation', 'documentary', 'musical'
-  ];
-  
-  const foundGenres = commonGenres.filter(genre => 
-    text.toLowerCase().includes(genre) || text.toLowerCase().includes(genre.replace('-', ' '))
-  );
-  
-  return foundGenres.length > 0 ? foundGenres : ['drama'];
-}
-
-function extractCulturalKeywords(text: string): string[] {
-  const culturalTerms = [
-    'visual', 'cinematic', 'artistic', 'cultural', 'social', 'emotional',
-    'psychological', 'philosophical', 'symbolic', 'narrative', 'aesthetic'
-  ];
-  
-  const foundTerms = culturalTerms.filter(term => text.toLowerCase().includes(term));
-  return foundTerms.length > 0 ? foundTerms : ['cinematic', 'artistic'];
-}
-
-function generateVibeParameters(movieAnalysis: any): any {
-  const { themes, genres, culturalKeywords } = movieAnalysis;
-  
-  // Map themes and genres to Qloo-style parameters
-  const audienceMap: Record<string, string[]> = {
-    'sci-fi': ['tech enthusiasts', 'sci-fi fans', 'young adults'],
-    'romance': ['couples', 'young adults', 'date night'],
-    'action': ['action fans', 'young males', 'thrill seekers'],
-    'drama': ['general audience', 'film enthusiasts', 'mature viewers'],
-    'comedy': ['general audience', 'young adults', 'family'],
-    'horror': ['horror fans', 'young adults', 'thrill seekers'],
-    'fantasy': ['fantasy fans', 'young adults', 'escapism seekers']
-  };
-  
-  const audiences: string[] = [];
-  genres.forEach((genre: string) => {
-    if (audienceMap[genre]) {
-      audiences.push(...audienceMap[genre]);
-    }
-  });
-  
-  // Generate tags from themes and cultural keywords
-  const tags = [...themes, ...culturalKeywords, ...genres].map(tag => 
-    tag.toLowerCase().replace(/\s+/g, '_')
-  );
-  
-  return {
-    audiences: [...new Set(audiences)].slice(0, 5),
-    tags: [...new Set(tags)].slice(0, 10),
-    entityType: 'urn:entity:movie'
-  };
-}
-
-
-
-async function getSimilarMoviesFromQloo(vibeParameters: any, originalMovie: string) {
-  if (!process.env.QLOO_API_KEY) {
-    console.log('⚠️ No Qloo API key provided, using fallback movies');
-    return getFallbackSimilarMovies(vibeParameters, originalMovie);
+  if (typeof result === 'object' && result.generated_text) {
+    console.log('✅ Extracted description:', result.generated_text);
+    return result.generated_text;
   }
-
-  console.log('🔍 Fetching similar movies from Qloo with vibe parameters:', vibeParameters);
   
+  if (typeof result === 'object' && result.error) {
+    throw new Error(`Hugging Face error: ${result.error}`);
+  }
+  
+  console.log('⚠️ Unexpected HF response format, using fallback');
+  return 'A space requiring cultural analysis';
+}
+
+async function analyzeVibeWithHF(imageDescription: string) {
+  const prompt = `Analyze this space description for cultural vibes and aesthetics: "${imageDescription}"
+
+Task: Extract cultural and aesthetic information from this description and format as JSON.
+
+Please identify:
+- Primary aesthetic style (e.g., "modern minimalist", "vintage bohemian", "industrial chic")
+- Secondary style elements
+- Cultural context and meaning
+- Aesthetic keywords
+- Mood descriptors
+
+Respond with only a JSON object in this exact format:
+{
+  "primaryVibe": "main aesthetic style",
+  "secondaryVibes": ["secondary", "style", "elements"],
+  "culturalContext": "brief cultural meaning explanation",
+  "aestheticKeywords": ["style", "design", "keywords"],
+  "moodDescriptors": ["emotional", "mood", "words"]
+}`;
+
   try {
-    // Build the Qloo API request with proper vibe-based parameters
-    const params = new URLSearchParams();
-    params.append('filter.type', 'urn:entity:movie');
-    
-    // Use the strongest signal first - interests based on primary vibe
-    const primaryVibe = vibeParameters.primaryMood || 'emotional';
-    const vibeIntensity = vibeParameters.vibeIntensity || 'medium';
-    
-    // Map vibe characteristics to Qloo signals
-    if (vibeParameters.audiences && vibeParameters.audiences.length > 0) {
-      // Use the most relevant audience
-      params.append('signal.demographics.audiences', vibeParameters.audiences[0]);
-      console.log('🎯 Using audience signal:', vibeParameters.audiences[0]);
-    }
-    
-    // Add tag-based interests
-    if (vibeParameters.tags && vibeParameters.tags.length > 0) {
-      const qlooTags = vibeParameters.tags.slice(0, 3).map((tag: string) => 
-        `urn:tag:keyword:media:${tag.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`
-      );
-      params.append('signal.interests.tags', qlooTags.join(','));
-      console.log('🏷️ Using tag signals:', qlooTags);
-    }
-    
-    // Add location for better results
-    params.append('signal.location.query', 'United States');
-    params.append('limit', '8');
-    
-    const url = `https://hackathon.api.qloo.com/v2/insights/?${params.toString()}`;
-    console.log('🌐 Qloo API URL:', url);
-    
-    const response = await fetch(url, {
-      method: 'GET',
+    // Try Llama-2 first (better for structured tasks)
+    const response = await fetch(HF_CULTURAL_MODEL, {
+      method: 'POST',
       headers: {
-        'X-Api-Key': process.env.QLOO_API_KEY!,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    console.log('📡 Qloo API response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Qloo API error:', errorText);
-      
-      // Try simpler approach with just location and primary genre
-      return await trySimplifiedQlooQuery(vibeParameters, originalMovie);
-    }
-
-    const data = await response.json();
-    console.log('📦 Qloo movies response entities count:', data.results?.entities?.length || 0);
-    
-    const movies = data.results?.entities || [];
-    
-    if (movies.length === 0) {
-      console.log('⚠️ No movies returned from Qloo, trying simplified query');
-      return await trySimplifiedQlooQuery(vibeParameters, originalMovie);
-    }
-    
-    const filteredMovies = movies
-      .filter((movie: any) => movie.name?.toLowerCase() !== originalMovie.toLowerCase())
-      .map((movie: any) => transformQlooMovieResponse(movie, vibeParameters))
-      .slice(0, 6);
-      
-    console.log('✅ Successfully processed', filteredMovies.length, 'movie recommendations');
-    return filteredMovies;
-      
-  } catch (error) {
-    console.error('❌ Qloo movie search failed:', error);
-    return getFallbackSimilarMovies(vibeParameters, originalMovie);
-  }
-}
-
-async function trySimplifiedQlooQuery(vibeParameters: any, originalMovie: string) {
-  console.log('🔄 Trying simplified Qloo query...');
-  
-  try {
-    const params = new URLSearchParams();
-    params.append('filter.type', 'urn:entity:movie');
-    params.append('signal.location.query', 'United States');
-    
-    // Use just the primary genre/theme as a simple query
-    const primaryTag = vibeParameters.tags[0] || 'drama';
-    params.append('query', primaryTag);
-    params.append('limit', '8');
-    
-    const url = `https://hackathon.api.qloo.com/v2/insights/?${params.toString()}`;
-    console.log('🌐 Simplified Qloo API URL:', url);
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'X-Api-Key': process.env.QLOO_API_KEY!,
-        'Content-Type': 'application/json'
-      }
+        'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 300,
+          temperature: 0.3,
+          do_sample: true,
+          top_p: 0.7,
+          return_full_text: false
+        }
+      }),
     });
 
     if (response.ok) {
-      const data = await response.json();
-      const movies = data.results?.entities || [];
+      const result = await response.json();
+      let generatedText = '';
       
-      if (movies.length > 0) {
-        console.log('✅ Simplified query successful with', movies.length, 'results');
-        return movies
-          .filter((movie: any) => movie.name?.toLowerCase() !== originalMovie.toLowerCase())
-          .map((movie: any) => transformQlooMovieResponse(movie, vibeParameters))
-          .slice(0, 6);
+      if (Array.isArray(result) && result.length > 0) {
+        generatedText = result[0].generated_text || '';
+      } else if (typeof result === 'object' && result.generated_text) {
+        generatedText = result.generated_text;
+      }
+
+      // Try to extract JSON from response
+      const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+          console.log('JSON parse failed, using fallback analysis');
+        }
       }
     }
-    
-    throw new Error('Simplified query also failed');
-    
   } catch (error) {
-    console.log('❌ Simplified query failed, using vibe-based fallback movies');
-    return getFallbackSimilarMovies(vibeParameters, originalMovie);
+    console.log('Llama model failed, using fallback analysis');
   }
+
+  // Fallback: Intelligent parsing based on keywords in description
+  return intelligentVibeAnalysis(imageDescription);
 }
 
-function transformQlooMovieResponse(qlooMovie: any, vibeParameters: any): any {
-  const title = qlooMovie.name || 'Unknown Movie';
-  const description = qlooMovie.properties?.description || 'A compelling film experience';
-  const year = qlooMovie.properties?.release_year || null;
-  const rating = qlooMovie.properties?.rating || null;
+function intelligentVibeAnalysis(description: string): any {
+  const lowerDesc = description.toLowerCase();
   
-  // Calculate match score based on shared elements
-  const movieKeywords = qlooMovie.properties?.keywords?.map((k: any) => k.name.toLowerCase()) || [];
-  const vibeKeywords = vibeParameters.tags.map((t: string) => t.toLowerCase());
+  // Define vibe patterns
+  const vibePatterns = {
+    'modern minimalist': ['clean', 'simple', 'white', 'minimal', 'contemporary', 'sleek'],
+    'vintage rustic': ['wood', 'rustic', 'vintage', 'old', 'traditional', 'antique'],
+    'industrial chic': ['metal', 'industrial', 'concrete', 'steel', 'urban', 'loft'],
+    'bohemian eclectic': ['colorful', 'artistic', 'eclectic', 'plants', 'textiles', 'boho'],
+    'luxury elegant': ['elegant', 'luxury', 'gold', 'marble', 'expensive', 'refined'],
+    'cozy casual': ['cozy', 'comfortable', 'warm', 'casual', 'soft', 'relaxed'],
+    'contemporary sophisticated': ['modern', 'sophisticated', 'stylish', 'designed', 'curated']
+  };
+
+  // Find best matching vibe
+  let bestVibe = 'contemporary';
+  let bestScore = 0;
+
+  for (const [vibe, keywords] of Object.entries(vibePatterns)) {
+    const score = keywords.reduce((acc, keyword) => {
+      return acc + (lowerDesc.includes(keyword) ? 1 : 0);
+    }, 0);
+    
+    if (score > bestScore) {
+      bestScore = score;
+      bestVibe = vibe;
+    }
+  }
+
+  // Extract aesthetic keywords from description
+  const aestheticWords = [
+    'modern', 'vintage', 'rustic', 'elegant', 'minimal', 'colorful', 'dark', 'bright',
+    'wooden', 'metal', 'glass', 'fabric', 'leather', 'stone', 'ceramic', 'plastic',
+    'clean', 'messy', 'organized', 'artistic', 'functional', 'decorative'
+  ];
   
-  const sharedElements = movieKeywords.filter((keyword: string) =>
-    vibeKeywords.some((vibeKeyword: string) => 
-      keyword.includes(vibeKeyword) || vibeKeyword.includes(keyword)
-    )
-  );
+  const foundKeywords = aestheticWords.filter(word => lowerDesc.includes(word));
   
-  const matchScore = Math.min(0.95, 0.6 + (sharedElements.length * 0.08));
-  
-  const reason = generateMovieMatchReason(title, sharedElements, vibeParameters);
-  
+  // Generate mood descriptors
+  const moodMappings = {
+    'modern minimalist': ['calm', 'focused', 'serene'],
+    'vintage rustic': ['nostalgic', 'warm', 'homey'],
+    'industrial chic': ['edgy', 'urban', 'creative'],
+    'bohemian eclectic': ['free-spirited', 'artistic', 'vibrant'],
+    'luxury elegant': ['sophisticated', 'refined', 'exclusive'],
+    'cozy casual': ['comfortable', 'relaxed', 'intimate'],
+    'contemporary sophisticated': ['polished', 'trendy', 'confident']
+  };
+
+  const secondaryVibes = vibePatterns[bestVibe as keyof typeof vibePatterns] || ['contemporary', 'stylish'];
+  const moodDescriptors = moodMappings[bestVibe as keyof typeof moodMappings] || ['modern', 'appealing'];
+
   return {
-    title,
-    description,
-    year,
-    rating,
-    matchScore,
-    reason,
-    sharedElements: sharedElements.length > 0 ? sharedElements : vibeParameters.tags.slice(0, 3),
-    qloo_data: {
-      entity_id: qlooMovie.entity_id,
-      type: qlooMovie.type
-    }
+    primaryVibe: bestVibe,
+    secondaryVibes: secondaryVibes.slice(0, 3),
+    culturalContext: `This space embodies a ${bestVibe} aesthetic, reflecting contemporary design sensibilities and cultural preferences for ${moodDescriptors.join(', ')} environments.`,
+    aestheticKeywords: foundKeywords.length > 0 ? foundKeywords.slice(0, 5) : ['contemporary', 'designed'],
+    moodDescriptors: moodDescriptors
   };
 }
 
-function generateMovieMatchReason(title: string, sharedElements: string[], vibeParameters: any): string {
-  if (sharedElements.length > 2) {
-    return `${title} shares key thematic elements including ${sharedElements.slice(0, 2).join(', ')}, making it a strong match for similar audiences`;
-  } else if (sharedElements.length > 0) {
-    return `${title} resonates with similar ${sharedElements[0]} themes and cultural sensibilities`;
-  } else {
-    return `${title} appeals to similar audiences interested in ${vibeParameters.audiences[0] || 'thoughtful cinema'}`;
+async function getRecommendationsFromQloo(vibeAnalysis: any, location: string = 'New York') {
+  if (!process.env.QLOO_API_KEY) {
+    console.log('⚠️ No Qloo API key provided, using fallback');
+    return getFallbackRecommendations(vibeAnalysis);
   }
-}
 
-function getFallbackSimilarMovies(vibeParameters: any, originalMovie: string): any[] {
-  console.log('📝 Generating vibe-based fallback recommendations for:', originalMovie);
-  console.log('🎭 Using vibe parameters:', vibeParameters);
-  
-  const { primaryMood, vibeIntensity, tags } = vibeParameters;
-  
-  // Comprehensive movie database organized by vibes
-  const moviesByVibe: Record<string, any[]> = {
-    // Sci-Fi & Futuristic Vibes
-    'sci-fi': [
-      { title: 'Blade Runner 2049', year: 2017, description: 'Visually stunning cyberpunk sequel exploring identity and humanity', vibeMatch: ['futuristic', 'philosophical', 'visual'] },
-      { title: 'Arrival', year: 2016, description: 'Thoughtful alien contact film about communication and time', vibeMatch: ['cerebral', 'emotional', 'sci-fi'] },
-      { title: 'Ex Machina', year: 2014, description: 'Intimate AI thriller about consciousness and humanity', vibeMatch: ['psychological', 'sci-fi', 'philosophical'] },
-      { title: 'Interstellar', year: 2014, description: 'Epic space odyssey about love transcending dimensions', vibeMatch: ['epic', 'emotional', 'sci-fi'] },
-      { title: 'Her', year: 2013, description: 'Romantic drama about human-AI relationship', vibeMatch: ['romantic', 'futuristic', 'emotional'] }
-    ],
-    
-    // Action & Intense Vibes
-    'action': [
-      { title: 'Mad Max: Fury Road', year: 2015, description: 'High-octane post-apocalyptic action masterpiece', vibeMatch: ['intense', 'visual', 'action'] },
-      { title: 'John Wick', year: 2014, description: 'Stylish revenge thriller with incredible action choreography', vibeMatch: ['stylish', 'intense', 'action'] },
-      { title: 'The Raid', year: 2011, description: 'Brutal martial arts action film in confined setting', vibeMatch: ['intense', 'martial_arts', 'action'] },
-      { title: 'Baby Driver', year: 2017, description: 'Music-driven heist film with kinetic energy', vibeMatch: ['stylish', 'musical', 'action'] }
-    ],
-    
-    // Romance & Emotional Vibes
-    'romance': [
-      { title: 'La La Land', year: 2016, description: 'Modern musical about love and dreams in Los Angeles', vibeMatch: ['romantic', 'musical', 'emotional'] },
-      { title: 'Call Me By Your Name', year: 2017, description: 'Beautiful coming-of-age romance set in Italy', vibeMatch: ['romantic', 'coming_of_age', 'emotional'] },
-      { title: 'The Shape of Water', year: 2017, description: 'Fantasy romance between woman and amphibian creature', vibeMatch: ['romantic', 'fantasy', 'unique'] },
-      { title: 'Eternal Sunshine of the Spotless Mind', year: 2004, description: 'Unique romance about memory and love', vibeMatch: ['romantic', 'psychological', 'unique'] }
-    ],
-    
-    // Dark & Psychological Vibes
-    'thriller': [
-      { title: 'Gone Girl', year: 2014, description: 'Psychological thriller about marriage and deception', vibeMatch: ['psychological', 'dark', 'thriller'] },
-      { title: 'Zodiac', year: 2007, description: 'Meticulous procedural about the Zodiac killer investigation', vibeMatch: ['dark', 'investigative', 'psychological'] },
-      { title: 'Prisoners', year: 2013, description: 'Intense thriller about desperate father searching for daughter', vibeMatch: ['intense', 'dark', 'thriller'] },
-      { title: 'Shutter Island', year: 2010, description: 'Psychological thriller set in mysterious psychiatric facility', vibeMatch: ['psychological', 'mystery', 'dark'] }
-    ],
-    
-    // Drama & Character-Driven Vibes
-    'drama': [
-      { title: 'Manchester by the Sea', year: 2016, description: 'Deeply emotional drama about grief and family', vibeMatch: ['emotional', 'family', 'drama'] },
-      { title: 'Moonlight', year: 2016, description: 'Beautiful coming-of-age story told in three acts', vibeMatch: ['coming_of_age', 'emotional', 'character_study'] },
-      { title: 'There Will Be Blood', year: 2007, description: 'Epic character study of greed and ambition', vibeMatch: ['character_study', 'epic', 'dark'] },
-      { title: 'The Social Network', year: 2010, description: 'Sharp drama about Facebook\'s creation and betrayal', vibeMatch: ['character_study', 'modern', 'drama'] }
-    ],
-    
-    // Comedy & Light Vibes
-    'comedy': [
-      { title: 'The Grand Budapest Hotel', year: 2014, description: 'Whimsical Wes Anderson comedy about European hotel', vibeMatch: ['whimsical', 'visual', 'comedy'] },
-      { title: 'Knives Out', year: 2019, description: 'Clever whodunit with excellent ensemble cast', vibeMatch: ['clever', 'ensemble', 'mystery'] },
-      { title: 'Hunt for the Wilderpeople', year: 2016, description: 'Heartwarming New Zealand adventure comedy', vibeMatch: ['heartwarming', 'adventure', 'comedy'] }
-    ],
-    
-    // Horror & Suspense Vibes
-    'horror': [
-      { title: 'Hereditary', year: 2018, description: 'Deeply unsettling family horror about grief and trauma', vibeMatch: ['psychological', 'family', 'horror'] },
-      { title: 'Get Out', year: 2017, description: 'Social thriller combining horror with racial commentary', vibeMatch: ['social', 'psychological', 'horror'] },
-      { title: 'The Witch', year: 2015, description: 'Period horror about Puritan family and witchcraft', vibeMatch: ['atmospheric', 'period', 'horror'] }
-    ],
-    
-    // Fantasy & Magical Vibes
-    'fantasy': [
-      { title: 'Pan\'s Labyrinth', year: 2006, description: 'Dark fairy tale blending reality and fantasy', vibeMatch: ['fantasy', 'dark', 'magical'] },
-      { title: 'The Shape of Water', year: 2017, description: 'Romantic fantasy about love conquering difference', vibeMatch: ['romantic', 'fantasy', 'unique'] },
-      { title: 'Amélie', year: 2001, description: 'Whimsical French film about joy and human connection', vibeMatch: ['whimsical', 'heartwarming', 'french'] }
-    ]
-  };
-  
-  // Find movies that match the detected vibe
-  let selectedMovies: any[] = [];
-  
-  // First, try to match based on primary tags
-  tags.forEach((tag: string) => {
-    if (moviesByVibe[tag]) {
-      selectedMovies.push(...moviesByVibe[tag]);
+  console.log('🔍 Starting Qloo API integration...');
+  const { aestheticKeywords, primaryVibe, moodDescriptors } = vibeAnalysis;
+  const recommendations = [];
+
+  // Simplified categories for better success rate
+  const categories = [
+    { 
+      type: 'urn:entity:place', 
+      category: 'restaurants', 
+      queryTerms: ['restaurant', 'dining'] 
+    },
+    { 
+      type: 'urn:entity:place', 
+      category: 'experiences', 
+      queryTerms: ['venue', 'attraction'] 
     }
-  });
-  
-  // If no direct matches, try related vibes based on mood
-  if (selectedMovies.length === 0) {
-    const moodToVibes: Record<string, string[]> = {
-      'dark': ['thriller', 'horror', 'drama'],
-      'intense': ['action', 'thriller'],
-      'emotional': ['drama', 'romance'],
-      'light': ['comedy', 'fantasy'],
-      'atmospheric': ['thriller', 'horror', 'sci-fi']
-    };
-    
-    if (primaryMood && moodToVibes[primaryMood]) {
-      moodToVibes[primaryMood].forEach(vibe => {
-        if (moviesByVibe[vibe]) {
-          selectedMovies.push(...moviesByVibe[vibe]);
-        }
+  ];
+
+  for (const categoryConfig of categories) {
+    try {
+      console.log(`🔍 Fetching ${categoryConfig.category} from Qloo...`);
+      const items = await fetchQlooRecommendations(
+        categoryConfig.type,
+        categoryConfig.queryTerms,
+        aestheticKeywords.slice(0, 2), // Limit keywords to avoid long URLs
+        location
+      );
+      
+      recommendations.push({
+        category: categoryConfig.category,
+        items: items.map(item => transformQlooResponse(item, vibeAnalysis)).slice(0, 2)
+      });
+      
+      console.log(`✅ Got ${items.length} ${categoryConfig.category} recommendations`);
+    } catch (error) {
+      console.error(`❌ Error fetching ${categoryConfig.category}:`, error);
+      // Add fallback category data
+      recommendations.push({
+        category: categoryConfig.category,
+        items: getFallbackCategoryItems(categoryConfig.category, vibeAnalysis)
       });
     }
   }
-  
-  // Fallback to drama if still no matches
-  if (selectedMovies.length === 0) {
-    selectedMovies = moviesByVibe['drama'];
-  }
-  
-  // Remove duplicates and the original movie
-  const uniqueMovies = selectedMovies
-    .filter((movie, index, self) => 
-      movie.title.toLowerCase() !== originalMovie.toLowerCase() &&
-      index === self.findIndex(m => m.title === movie.title)
-    )
-    .slice(0, 6);
-  
-  // Add match scores and reasons based on vibe alignment
-  return uniqueMovies.map((movie, index) => {
-    const sharedVibeElements = movie.vibeMatch.filter((vibe: string) => 
-      tags.some((tag: string) => tag.includes(vibe) || vibe.includes(tag))
-    );
-    
-    const matchScore = Math.max(0.6, 0.8 - (index * 0.03) + (sharedVibeElements.length * 0.05));
-    
-    const reason = sharedVibeElements.length > 0 
-      ? `Shares ${sharedVibeElements.join(', ')} vibes with similar ${primaryMood || 'emotional'} tone`
-      : `Matches the ${primaryMood || 'emotional'} and ${vibeIntensity || 'medium'} intensity vibe`;
-    
-    return {
-      title: movie.title,
-      description: movie.description,
-      year: movie.year,
-      rating: 7.0 + Math.random() * 2.5, // Simulated rating
-      matchScore,
-      reason,
-      sharedElements: sharedVibeElements.length > 0 ? sharedVibeElements : tags.slice(0, 3)
-    };
+
+  // Add music and activities as fallback (since Qloo music API might be different)
+  recommendations.push({
+    category: 'music',
+    items: getFallbackCategoryItems('music', vibeAnalysis)
   });
+  
+  recommendations.push({
+    category: 'activities',
+    items: getFallbackCategoryItems('activities', vibeAnalysis)
+  });
+
+  return recommendations;
+}
+
+// Fallback recommendation functions
+function getFallbackRecommendations(vibeAnalysis: any) {
+  console.log('📝 Generating fallback recommendations');
+  const categories = ['restaurants', 'activities', 'music', 'experiences'];
+  return categories.map(category => ({
+    category,
+    items: getFallbackCategoryItems(category, vibeAnalysis)
+  }));
+}
+
+function getFallbackCategoryItems(category: string, vibeAnalysis: any) {
+  const { primaryVibe, aestheticKeywords, moodDescriptors } = vibeAnalysis;
+  
+  const fallbackData: Record<string, any[]> = {
+    restaurants: [
+      {
+        id: '1',
+        name: `${primaryVibe.charAt(0).toUpperCase() + primaryVibe.slice(1)} Bistro`,
+        description: `A restaurant that embodies ${primaryVibe} dining with ${aestheticKeywords.join(', ')} elements`,
+        reason: `Matches your ${primaryVibe} aesthetic with sophisticated ambiance`,
+        confidence: 0.75,
+        tags: Array.from(new Set([...aestheticKeywords.slice(0, 3), 'dining', 'restaurant'])),
+        rating: 4.2
+      },
+      {
+        id: '2',
+        name: `The ${moodDescriptors[0] || 'Contemporary'} Table`,
+        description: `Contemporary dining space reflecting ${moodDescriptors.join(', ')} atmosphere`,
+        reason: `Complements the ${primaryVibe} vibe with curated dining experience`,
+        confidence: 0.72,
+        tags: Array.from(new Set([...moodDescriptors.slice(0, 2), 'contemporary', 'dining'])),
+        rating: 4.0
+      }
+    ],
+    music: [
+      {
+        id: '1',
+        name: `${primaryVibe.charAt(0).toUpperCase() + primaryVibe.slice(1)} Playlist`,
+        description: `Curated music selection perfect for ${primaryVibe} spaces`,
+        reason: `Sound design that complements ${primaryVibe} aesthetics`,
+        confidence: 0.80,
+        tags: Array.from(new Set([...aestheticKeywords.slice(0, 2), 'playlist', 'ambient'])),
+        rating: 4.5
+      },
+      {
+        id: '2',
+        name: `${moodDescriptors[0] || 'Contemporary'} Soundscape`,
+        description: `Audio experiences that match ${moodDescriptors.join(', ')} moods`,
+        reason: `Musical elements that enhance the ${primaryVibe} atmosphere`,
+        confidence: 0.76,
+        tags: Array.from(new Set([...moodDescriptors.slice(0, 2), 'soundscape', 'ambient'])),
+        rating: 4.3
+      }
+    ],
+    activities: [
+      {
+        id: '1',
+        name: `${primaryVibe.charAt(0).toUpperCase() + primaryVibe.slice(1)} Gallery Experience`,
+        description: `Cultural activities that celebrate ${primaryVibe} aesthetics`,
+        reason: `Activities aligned with ${primaryVibe} cultural sensibilities`,
+        confidence: 0.78,
+        tags: Array.from(new Set([...aestheticKeywords.slice(0, 3), 'culture', 'gallery'])),
+        rating: 4.4
+      },
+      {
+        id: '2',
+        name: `${moodDescriptors[0] || 'Contemporary'} Workshop`,
+        description: `Hands-on experiences in ${moodDescriptors.join(', ')} environments`,
+        reason: `Interactive activities that match your ${primaryVibe} preferences`,
+        confidence: 0.74,
+        tags: Array.from(new Set([...moodDescriptors.slice(0, 2), 'workshop', 'creative'])),
+        rating: 4.1
+      }
+    ],
+    experiences: [
+      {
+        id: '1',
+        name: `${primaryVibe.charAt(0).toUpperCase() + primaryVibe.slice(1)} Space Tour`,
+        description: `Curated experiences showcasing ${primaryVibe} design and culture`,
+        reason: `Experiences that celebrate ${primaryVibe} aesthetic principles`,
+        confidence: 0.77,
+        tags: Array.from(new Set([...aestheticKeywords.slice(0, 3), 'tour', 'experience'])),
+        rating: 4.3
+      },
+      {
+        id: '2',
+        name: `The ${moodDescriptors[0] || 'Contemporary'} Experience`,
+        description: `Immersive experiences designed for ${moodDescriptors.join(', ')} appreciation`,
+        reason: `Tailored experiences that resonate with ${primaryVibe} values`,
+        confidence: 0.73,
+        tags: Array.from(new Set([...moodDescriptors.slice(0, 2), 'immersive', 'curated'])),
+        rating: 4.2
+      }
+    ]
+  };
+
+  return fallbackData[category] || [];
+}
+
+async function fetchQlooRecommendations(entityType: string, categoryTerms: string[], vibeKeywords: string[], location: string) {
+  // Construct search query combining category and vibe (simplified)
+  const searchTerms = categoryTerms.concat(vibeKeywords.slice(0, 2)).join(' ');
+  const encodedLocation = encodeURIComponent(location);
+  const encodedQuery = encodeURIComponent(searchTerms);
+
+  // Simplified URL construction
+  const url = `https://api.qloo.com/v2/insights/?filter.type=${entityType}&filter.location.query=${encodedLocation}&query=${encodedQuery}&limit=3`;
+  
+  console.log('🌐 Qloo API URL:', url);
+  console.log('🔑 Using API key:', process.env.QLOO_API_KEY ? 'Present' : 'Missing');
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'X-Api-Key': process.env.QLOO_API_KEY!,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  console.log('📡 Qloo API response status:', response.status);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('❌ Qloo API error response:', errorText);
+    throw new Error(`Qloo API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  console.log('📦 Qloo API response:', JSON.stringify(data, null, 2));
+  
+  return data.results?.entities || [];
+}
+
+function transformQlooResponse(qlooEntity: any, vibeAnalysis: any): any {
+  const { primaryVibe } = vibeAnalysis;
+  
+  // Extract relevant information from Qloo response
+  const name = qlooEntity.name || 'Recommended Item';
+  const description = qlooEntity.properties?.description || 'A recommendation that matches your vibe';
+  const address = qlooEntity.properties?.address || '';
+  const website = qlooEntity.properties?.website || '';
+  const rating = qlooEntity.properties?.business_rating || 0;
+  const keywords = qlooEntity.properties?.keywords?.slice(0, 3).map((k: any) => k.name) || [];
+  
+  // Generate confidence based on keyword matches
+  const keywordMatches = keywords.filter((keyword: string) => 
+    vibeAnalysis.aestheticKeywords.some((vibeKeyword: string) => 
+      keyword.toLowerCase().includes(vibeKeyword.toLowerCase()) ||
+      vibeKeyword.toLowerCase().includes(keyword.toLowerCase())
+    )
+  );
+  
+  const confidence = Math.min(0.95, 0.6 + (keywordMatches.length * 0.1) + (rating * 0.05));
+
+  // Generate reason based on vibe match
+  const reason = generateMatchReason(qlooEntity, primaryVibe, keywordMatches);
+
+  return {
+    id: qlooEntity.entity_id || Math.random().toString(36),
+    name,
+    description: address ? `${description} Located at ${address}` : description,
+    reason,
+    confidence,
+    tags: keywords,
+    website,
+    rating,
+    qloo_data: {
+      entity_id: qlooEntity.entity_id,
+      type: qlooEntity.type,
+      subtype: qlooEntity.subtype
+    }
+  };
+}
+
+function generateMatchReason(entity: any, primaryVibe: string, keywordMatches: string[]): string {
+  const name = entity.name || 'This recommendation';
+  const hasKeywordMatch = keywordMatches.length > 0;
+  const rating = entity.properties?.business_rating || 0;
+
+  if (hasKeywordMatch && rating >= 4) {
+    return `${name} perfectly captures the ${primaryVibe} aesthetic with highly-rated ${keywordMatches.join(', ')} elements`;
+  } else if (hasKeywordMatch) {
+    return `${name} aligns with your ${primaryVibe} vibe through its ${keywordMatches.join(', ')} characteristics`;
+  } else if (rating >= 4) {
+    return `${name} is a highly-rated venue that complements the ${primaryVibe} cultural sensibility`;
+  } else {
+    return `${name} matches the ${primaryVibe} aesthetic and cultural context`;
+  }
 }
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
   
   try {
-    console.log('=== Starting movie analysis ===');
-    const { movieName } = await request.json();
+    console.log('=== Starting analysis ===');
+    const { imageBase64 } = await request.json();
 
-    if (!movieName) {
-      console.error('No movie name provided');
+    if (!imageBase64) {
+      console.error('No image provided');
       return NextResponse.json(
-        { error: 'No movie name provided' } as APIError,
+        { error: 'No image provided' } as APIError,
         { status: 400 }
       );
     }
@@ -615,54 +469,73 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 1: Analyze movie with Hugging Face
-    console.log('Step 1: Analyzing movie with Hugging Face...');
-    let movieAnalysis;
+    // Step 1: Analyze image with Hugging Face
+    console.log('Step 1: Analyzing image with Hugging Face...');
+    let imageDescription;
     try {
-      movieAnalysis = await analyzeMovieWithHF(movieName);
-      console.log('✅ Movie analysis:', movieAnalysis);
+      imageDescription = await analyzeImageWithHF(imageBase64);
+      console.log('✅ Image description:', imageDescription);
     } catch (error) {
-      console.error('❌ Hugging Face movie analysis failed:', error);
-      movieAnalysis = intelligentMovieAnalysis(movieName);
-      console.log('📝 Using fallback movie analysis');
+      console.error('❌ Hugging Face image analysis failed:', error);
+      imageDescription = 'A space with modern aesthetic elements and contemporary design features';
+      console.log('📝 Using fallback description');
     }
 
-    // Step 2: Generate vibe parameters
-    console.log('Step 2: Generating vibe parameters...');
-    const vibeParameters = generateVibeParameters(movieAnalysis);
-    console.log('✅ Vibe parameters:', vibeParameters);
-
-    // Step 3: Get similar movies from Qloo
-    console.log('Step 3: Getting similar movies...');
-    let similarMovies;
+    // Step 2: Analyze vibe with Hugging Face
+    console.log('Step 2: Analyzing vibe with Hugging Face...');
+    let vibeAnalysis;
     try {
-      similarMovies = await getSimilarMoviesFromQloo(vibeParameters, movieName);
-      console.log('✅ Similar movies received:', similarMovies.length);
+      vibeAnalysis = await analyzeVibeWithHF(imageDescription);
+      console.log('✅ Vibe analysis:', vibeAnalysis);
     } catch (error) {
-      console.error('❌ Movie recommendations failed:', error);
-      similarMovies = getFallbackSimilarMovies(vibeParameters, movieName);
-      console.log('📝 Using fallback movie recommendations');
+      console.error('❌ Vibe analysis failed:', error);
+      vibeAnalysis = {
+        primaryVibe: "contemporary",
+        secondaryVibes: ["modern", "stylish"],
+        culturalContext: "A space with contemporary appeal and modern sensibilities",
+        aestheticKeywords: ["modern", "contemporary", "stylish"],
+        moodDescriptors: ["sophisticated", "clean", "appealing"]
+      };
+      console.log('📝 Using fallback vibe analysis');
+    }
+
+    // Step 3: Get recommendations from Qloo
+    console.log('Step 3: Getting recommendations...');
+    let recommendations;
+    try {
+      if (process.env.QLOO_API_KEY) {
+        console.log('🔍 Attempting Qloo API integration...');
+        recommendations = await getRecommendationsFromQloo(vibeAnalysis);
+        console.log('✅ Qloo recommendations received');
+      } else {
+        console.log('⚠️ No Qloo API key, using fallback recommendations');
+        recommendations = getFallbackRecommendations(vibeAnalysis);
+      }
+    } catch (error) {
+      console.error('❌ Qloo API failed:', error);
+      console.log('📝 Using fallback recommendations');
+      recommendations = getFallbackRecommendations(vibeAnalysis);
     }
 
     const processingTime = Date.now() - startTime;
     console.log(`✅ Total processing time: ${processingTime}ms`);
 
-    const response: MovieVibeResponse = {
-      movieAnalysis,
-      vibeParameters,
-      similarMovies,
+    const response: VibeValidationResponse = {
+      imageDescription,
+      vibeAnalysis,
+      recommendations,
       processingTime
     };
 
     return NextResponse.json(response);
 
   } catch (error) {
-    console.error('💥 Critical error in movie analysis:', error);
+    console.error('💥 Critical error in analysis:', error);
     
     const errorResponse: APIError = {
-      error: 'Movie analysis failed',
+      error: 'Analysis failed',
       details: error instanceof Error ? error.message : 'Unknown error occurred',
-      code: 'MOVIE_ANALYSIS_ERROR'
+      code: 'ANALYSIS_ERROR'
     };
 
     return NextResponse.json(errorResponse, { status: 500 });

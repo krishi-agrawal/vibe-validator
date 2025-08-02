@@ -1,3 +1,4 @@
 {
+  "/not-found": "app/not-found.js",
   "/movie-vibe/page": "app/movie-vibe/page.js"
 }
